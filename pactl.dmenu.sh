@@ -1,6 +1,6 @@
 # @jaimecgomezz
 #
-# Control pactl through dmeny
+# Control pactl through dmenu
 #
 # Requires:
 #   - dmenu
@@ -13,6 +13,7 @@ sink_inputs_msg="Playbacks"
 default_msg="Set as default"
 volume_msg="Volume"
 mute_msg="Mute"
+unmute_msg="Unmute"
 redirect_msg="Redirect"
 
 __copy() {
@@ -21,15 +22,14 @@ __copy() {
   notify-send "$1"
 }
 
-__select() {
+__audio_select() {
   form=$1
   prompt="$2"
   preselection="$3"
 
   case $form in
-    2) dmenu -l 10 -p "$prompt" -d '>' ;;
-    3) dmenu -l 10 -p "$prompt" -d '>' -ps "$preselection" ;;
-    *) dmenu -l 10 -p "$prompt" ;;
+    1) dmenu -l 10 -p "$prompt" ;;
+    2) dmenu -l 10 -p "$prompt" -d '>' -ps "$preselection" ;;
   esac
 }
 
@@ -68,7 +68,7 @@ __audio_source_volume_submenu() {
     source="$(__audio_find_source "$id")"
     volume="$(echo "$source" | jq -r '.volume | "L: \(.["front-left"].value_percent), R: \(.["front-right"].value_percent)"')"
 
-    selection="$(echo -e "$options" | __select 3 "$volume" "$preselection")"
+    selection="$(echo -e "$options" | __audio_select 2 "$volume" "$preselection")"
 
     case "$selection" in
       "+5") preselection=0 ;;
@@ -96,12 +96,12 @@ __audio_source_submenu() {
     muted="$(echo "$source" | jq -r '.mute')"
     volume="$(echo "$source" | jq -r '.volume | "L: \(.["front-left"].value_percent), R: \(.["front-right"].value_percent)"')"
 
-    muting_msg="$mute_msg ($muted)"
     voluming_msg="$volume_msg ($volume)"
+    [ "$muted" = "true" ] && muting_msg="$unmute_msg" || muting_msg="$mute_msg"
 
     options="$default_msg\n$muting_msg\n$voluming_msg"
 
-    selection="$(echo -e "$options" | __select 3 "$prompt" "$preselection")"
+    selection="$(echo -e "$options" | __audio_select 2 "$prompt" "$preselection")"
 
     case "$selection" in
       '') return ;;
@@ -109,8 +109,12 @@ __audio_source_submenu() {
         pactl set-default-source "$id"
         preselection=0
       ;;
-      "$mute_msg"*)
-        pactl set-source-mute "$id" toggle
+      "$mute_msg")
+        pactl set-source-mute "$id" 1
+        preselection=1
+      ;;
+      "$unmute_msg")
+        pactl set-source-mute "$id" 0
         preselection=1
       ;;
       "$volume_msg"*)
@@ -130,7 +134,7 @@ __audio_sources_submenu() {
     source="$(__audio_find_default_source)"
     prompt="$(echo "$source" | jq -r '.description')"
 
-    selection="$(echo "$sources" | __select 3 "${prompt:-$sources_msg}" "$preselection")"
+    selection="$(echo "$sources" | __audio_select 2 "${prompt:-$sources_msg}" "$preselection")"
 
     [ -n "$selection" ] || return
 
@@ -152,7 +156,7 @@ __audio_sink_volume_submenu() {
 
     volume="$(echo "$sink" | jq -r '.volume | "L: \(.["front-left"].value_percent), R: \(.["front-right"].value_percent)"')"
 
-    selection="$(echo -e "$options" | __select 3 "$volume" "$preselection")"
+    selection="$(echo -e "$options" | __audio_select 2 "$volume" "$preselection")"
 
     case "$selection" in
       "+5") preselection=0 ;;
@@ -180,12 +184,12 @@ __audio_sink_submenu() {
     muted="$(echo "$sink" | jq -r '.mute')"
     volume="$(echo "$sink" | jq -r '.volume | "L: \(.["front-left"].value_percent), R: \(.["front-right"].value_percent)"')"
 
-    muting_msg="$mute_msg ($muted)"
     voluming_msg="$volume_msg ($volume)"
+    [ "$muted" = "true" ] && muting_msg="$unmute_msg" || muting_msg="$mute_msg"
 
     options="$default_msg\n$muting_msg\n$voluming_msg"
 
-    selection="$(echo -e "$options" | __select 3 "$prompt" "$preselection")"
+    selection="$(echo -e "$options" | __audio_select 2 "$prompt" "$preselection")"
 
     case "$selection" in
       '') return ;;
@@ -193,8 +197,12 @@ __audio_sink_submenu() {
         pactl set-default-sink "$id"
         preselection=0
       ;;
-      "$mute_msg"*)
-        pactl set-sink-mute "$id" toggle
+      "$mute_msg")
+        pactl set-sink-mute "$id" 1
+        preselection=1
+      ;;
+      "$unmute_msg")
+        pactl set-sink-mute "$id" 0
         preselection=1
       ;;
       "$volume_msg"*)
@@ -215,7 +223,7 @@ __audio_sinks_submenu() {
 
     prompt="$(echo "$sink" | jq -r '.description')"
 
-    selection="$(echo "$sinks" | __select 3 "${prompt:-$sinks_msg}" "$preselection")"
+    selection="$(echo "$sinks" | __audio_select 2 "${prompt:-$sinks_msg}" "$preselection")"
 
     [ -n "$selection" ] || return
 
@@ -233,7 +241,7 @@ __audio_sink_input_redirect_submenu() {
   sinks="$(pactl -f json list sinks | jq -r 'sort_by(.description) | reverse | to_entries | .[] | "\(.value.description)>\(.key)@\(.value.name)"')"
 
   while true; do
-    selection="$(echo "$sinks" | __select 3 "${prompt:-$sinks_msg}" "$preselection")"
+    selection="$(echo "$sinks" | __audio_select 2 "${prompt:-$sinks_msg}" "$preselection")"
 
     [ -n "$selection" ] || return
 
@@ -255,7 +263,7 @@ __audio_sink_input_volume_submenu() {
 
     volume="$(echo "$sink_input" | jq -r '.volume | "L: \(.["front-left"].value_percent), R: \(.["front-right"].value_percent)"')"
 
-    selection="$(echo -e "$options" | __select 3 "$volume" "$preselection")"
+    selection="$(echo -e "$options" | __audio_select 2 "$volume" "$preselection")"
 
     case "$selection" in
       "+5") preselection=0 ;;
@@ -283,11 +291,11 @@ __audio_sink_input_submenu() {
     muted="$(echo "$sink_input" | jq -r '.mute')"
     volume="$(echo "$sink_input" | jq -r '.volume | "L: \(.["front-left"].value_percent), R: \(.["front-right"].value_percent)"')"
 
-    muting_msg="$mute_msg ($muted)"
+    [ "$muted" = "true" ] && muting_msg="$unmute_msg" || muting_msg="$mute_msg"
     voluming_msg="$volume_msg ($volume)"
 
     options="$redirect_msg\n$muting_msg\n$voluming_msg"
-    selection="$(echo -e "$options" | __select 3 "$prompt" "$preselection")"
+    selection="$(echo -e "$options" | __audio_select 2 "$prompt" "$preselection")"
 
     case "$selection" in
       '') return ;;
@@ -295,8 +303,12 @@ __audio_sink_input_submenu() {
         __audio_sink_input_redirect_submenu "$id"
         preselection=0
       ;;
-      "$mute_msg"*)
-        pactl set-sink-input-mute "$id" toggle
+      "$mute_msg")
+        pactl set-sink-input-mute "$id" 1
+        preselection=1
+      ;;
+      "$unmute_msg")
+        pactl set-sink-input-mute "$id" 0
         preselection=1
       ;;
       "$volume_msg"*)
@@ -314,7 +326,7 @@ __audio_sink_inputs_submenu() {
   sink_inputs="$(pactl -f json list sink-inputs | jq -r 'to_entries | .[] | "\(.value.properties.["application.name"])>\(.key)@\(.value.index)"')"
 
   while true; do
-    selection="$(echo "$sink_inputs" | __select 3 "$sink_inputs_msg" "$preselection")"
+    selection="$(echo "$sink_inputs" | __audio_select 2 "$sink_inputs_msg" "$preselection")"
 
     [ -n "$selection" ] || return
 
@@ -330,7 +342,7 @@ __audio_main() {
 
   while true; do
     options="$sinks_msg\n$sink_inputs_msg\n$sources_msg"
-    selection="$(echo -e "$options" | __select 3 "$main_prompt" "$preselection")"
+    selection="$(echo -e "$options" | __audio_select 2 "$main_prompt" "$preselection")"
 
     case "$selection" in
       '') exit 0;;
@@ -350,4 +362,6 @@ __audio_main() {
   done
 }
 
-__audio_main
+if [ "$0" = "$BASH_SOURCE" ]; then
+  __audio_main
+fi
